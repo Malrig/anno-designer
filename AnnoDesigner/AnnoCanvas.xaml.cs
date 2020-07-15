@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -23,267 +23,13 @@ using AnnoDesigner.Core.Presets.Models;
 using AnnoDesigner.CustomEventArgs;
 using AnnoDesigner.Helper;
 using AnnoDesigner.Models;
+using AnnoDesigner.Actions;
 using Microsoft.Win32;
 using NLog;
 using MessageBox = Xceed.Wpf.Toolkit.MessageBox;
 
 namespace AnnoDesigner
 {
-    /// <summary>
-    /// Interface for all actions that can affect the objects placed on the canvas.
-    /// </summary>
-    public interface IAction
-    {
-        public void PerformAction(List<LayoutObject> placedObjects);
-        public void UndoAction(List<LayoutObject> placedObjects);
-    }
-
-    public interface ICombinableAction : IAction
-    {
-        public void CombineActions(ICombinableAction toCombine);
-        public bool CombinableWith(ICombinableAction other);
-    }
-
-    /// <summary>
-    /// Abstract base class that implements adding or removing objects on the canvas.
-    /// </summary>
-    public abstract class AddRemovePlacedObjects : IAction
-    {
-        private List<LayoutObject> _objectsToPlace;
-        private AddRemove _addOrRemove;
-
-        protected enum AddRemove {
-            Add,
-            Remove
-        }
-
-        protected AddRemovePlacedObjects(List<LayoutObject> objectsToPlace, AddRemove addOrRemove)
-        {
-            _objectsToPlace = objectsToPlace;
-            _addOrRemove = addOrRemove;
-        }
-
-        public void PerformAction(List<LayoutObject> placedObjects)
-        {
-            switch (_addOrRemove)
-            {
-                case AddRemove.Add:
-                    addObject(placedObjects);
-                    break;
-                case AddRemove.Remove:
-                    removeObject(placedObjects);
-                    break;
-            }
-        }
-
-        public void UndoAction(List<LayoutObject> placedObjects)
-        {
-            switch (_addOrRemove) 
-            {
-                case AddRemove.Add:
-                    removeObject(placedObjects);
-                    break;
-                case AddRemove.Remove:
-                    addObject(placedObjects);
-                    break;
-            }
-
-        }
-
-        private void addObject(List<LayoutObject> placedObjects)
-        {
-            placedObjects.AddRange(_objectsToPlace);
-            // sort the objects because borderless objects should be drawn first
-            placedObjects.Sort((a, b) => b.WrappedAnnoObject.Borderless.CompareTo(a.WrappedAnnoObject.Borderless));
-        }
-
-        private void removeObject(List<LayoutObject> placedObjects)
-        {
-            // placedObjects = placedObjects.Except(_objectsToPlace).ToList();
-            _objectsToPlace.ForEach(_ => placedObjects.Remove(_));
-        }
-    }
-
-    /// <summary>
-    /// Places objects on the canvas.
-    /// </summary>
-    public class AddPlacedObjects : AddRemovePlacedObjects
-    {
-        public AddPlacedObjects(List<LayoutObject> objectsToPlace) : base(objectsToPlace, AddRemove.Add) { }
-    }
-
-    /// <summary>
-    /// Removes objects from the canvas.
-    /// </summary>
-    public class RemovePlacedObjects : AddRemovePlacedObjects
-    {
-        public RemovePlacedObjects(List<LayoutObject> objectsToPlace) : base(objectsToPlace, AddRemove.Remove) { }
-    }
-
-    /// <summary>
-    /// Moves all objects on the canvas.
-    /// </summary>
-    public class MoveAllObjects : ICombinableAction
-    {
-        private static readonly Logger logger = LogManager.GetCurrentClassLogger();
-
-        private double _delta_x;
-        private double _delta_y;
-
-        public MoveAllObjects(double delta_x, double delta_y)
-        {
-            _delta_x = delta_x;
-            _delta_y = delta_y; 
-        }
-
-        public void PerformAction(List<LayoutObject> placedObjects)
-        {
-            logger.Debug("Perform move all action.");
-            foreach (var curLayoutObject in placedObjects)
-            {
-                curLayoutObject.Position = new Point(curLayoutObject.Position.X + _delta_x, curLayoutObject.Position.Y + _delta_y);
-            }
-        }
-
-        public void UndoAction(List<LayoutObject> placedObjects)
-        {
-            logger.Debug("Undo move all action.");
-            foreach (var curLayoutObject in placedObjects)
-            {
-                curLayoutObject.Position = new Point(curLayoutObject.Position.X - _delta_x, curLayoutObject.Position.Y - _delta_y);
-            }
-        }
-
-        public bool CombinableWith(ICombinableAction other)
-        {
-            if (other is MoveAllObjects)
-            {
-                return true;
-            }
-
-            return false;
-        }
-
-        public void CombineActions(ICombinableAction other)
-        {
-            logger.Debug("Combine two move all actions.");
-            if (!CombinableWith(other)) 
-            {
-                // If this has happened then we are going to end up with some screwed up action history
-                throw new System.ArgumentException("Cannot combine these ICombinableActions", "toCombine");
-            }
-
-            MoveAllObjects toCombine = (MoveAllObjects)other;
-
-            _delta_x += toCombine._delta_x;
-            _delta_y += toCombine._delta_y;
-        }
-    }
-
-    /// <summary>
-    /// Doesn't do anything, it is used to split up actions so they aren't combined together into a single action.
-    ///
-    /// For example multiple consecutive MoveAllObjects actions will be combined into a single one (to save memory and
-    /// so the user doesn't need to undo them all individually). However, we do want some move actions to remain separated
-    /// these should be separated by a NoOpAction.
-    /// </summary>
-    public class NoOpAction : IAction 
-    {
-        private static readonly Logger logger = LogManager.GetCurrentClassLogger();
-
-        public NoOpAction() {}
-
-
-        public void PerformAction(List<LayoutObject> placedObjects)
-        {
-            logger.Debug("Performing no-op action.");
-        }
-
-        public void UndoAction(List<LayoutObject> placedObjects)
-        {
-            logger.Debug("Undoing no-op action");
-        }
-    }
-
-    /// <summary>
-    /// Class which manages the actions that have been taken. Allows performing new actions, and undoing and redoing actions.
-    /// </summary>
-    public class ActionManager
-    {
-        private static readonly Logger logger = LogManager.GetCurrentClassLogger();
-
-        private List<LayoutObject> _placedObjects;
-        private Stack<IAction> _previousActions;
-        private Stack<IAction> _futureActions;
-
-        public ActionManager(ref List<LayoutObject> placedObjects){
-            _placedObjects = placedObjects;
-            _previousActions = new Stack<IAction>();
-            _futureActions = new Stack<IAction>();
-        }
-
-        public void PerformAction(IAction action){
-            logger.Debug("Performing action");
-
-            action.PerformAction(_placedObjects);
-
-            if (action is ICombinableAction && _previousActions.Count > 0 &&
-                _previousActions.Peek() is ICombinableAction)
-            {
-                // Both the new action and the last action are combinable, check if they can combine.
-                // If they can then pop off the previous action and combine them.
-                if (((ICombinableAction)action).CombinableWith((ICombinableAction)_previousActions.Peek()))
-                {
-                    logger.Debug("Have two compatible combinable actions, combine them.");
-                    ((ICombinableAction)action).CombineActions((ICombinableAction)_previousActions.Pop());
-                }
-            }
-
-            _previousActions.Push(action);
-
-            // Performing a new action so clear all future actions as they are no longer valid.
-            _futureActions.Clear();
-        }
-
-        public void UndoAction() {
-            IAction actionToUndo;
-            logger.Debug("Attempt an undo.");
-
-            // User wants to undo something so continue until we reach an action which is not a no-op
-            do
-            {
-                if (_previousActions.Count == 0)
-                {
-                    logger.Warn("No actions to undo");
-                    return;
-                }
-                actionToUndo = _previousActions.Pop();
-                _futureActions.Push(actionToUndo);
-            } while (actionToUndo is NoOpAction);
-
-            actionToUndo.UndoAction(_placedObjects);
-        }
-
-        public void RedoAction() {
-            logger.Debug("Attempt a redo.");
-            if (_futureActions.Count == 0)
-            {
-                logger.Warn("No actions to redo");
-                return;
-            }
-            IAction actionToRedo = _futureActions.Pop();
-            _previousActions.Push(actionToRedo);
-            actionToRedo.PerformAction(_placedObjects);
-
-            // We never want NoOpActions on the top of the _futureActions stack so pop all of them off
-            while (_futureActions.Count > 0 && _futureActions.Peek() is NoOpAction)
-            {
-                _previousActions.Push(_futureActions.Pop());
-            }
-        }
-    }
-
-
     /// <summary>
     /// Interaction logic for AnnoCanvas.xaml
     /// </summary>
@@ -1577,7 +1323,7 @@ namespace AnnoDesigner
                 // check if the mouse has moved at least one grid cell in any direction
                 if (dx != 0 || dy != 0)
                 {
-                    actionManager.PerformAction(new MoveAllObjects(dx, dy));
+                    actionManager.PerformAction(new MoveAllObjectsAction(dx, dy));
                     // adjust the drag start to compensate the amount we already moved
                     _mouseDragStart.X += _coordinateHelper.GridToScreen(dx, GridSize);
                     _mouseDragStart.Y += _coordinateHelper.GridToScreen(dy, GridSize);
@@ -1758,7 +1504,7 @@ namespace AnnoDesigner
                                 else
                                 {
                                     // Remove object, only ever remove a single object this way.
-                                    actionManager.PerformAction(new RemovePlacedObjects(new List<LayoutObject>() { obj } ));
+                                    actionManager.PerformAction(new RemovePlacedObjectsAction(new List<LayoutObject>() { obj } ));
                                     RemoveSelectedObject(obj, false);
                                 }
                             }
@@ -1816,7 +1562,7 @@ namespace AnnoDesigner
                 case Key.Delete:
                     // TODO: This currently doesn't work, will need to fix up.
                     // remove all currently selected objects from the grid and clear selection
-                    actionManager.PerformAction(new RemovePlacedObjects(CloneList(SelectedObjects)));
+                    actionManager.PerformAction(new RemovePlacedObjectsAction(CloneList(SelectedObjects)));
                     SelectedObjects.Clear();
                     StatisticsUpdated?.Invoke(this, UpdateStatisticsEventArgs.All);
                     break;
@@ -1953,7 +1699,7 @@ namespace AnnoDesigner
         {
             if (CurrentObjects.Count != 0 && !PlacedObjects.Exists(_ => ObjectIntersectionExists(CurrentObjects, _)))
             {
-                actionManager.PerformAction(new AddPlacedObjects(CloneList(CurrentObjects)));
+                actionManager.PerformAction(new AddPlacedObjectsAction(CloneList(CurrentObjects)));
 
                 StatisticsUpdated?.Invoke(this, UpdateStatisticsEventArgs.All);
                 //no need to update colors if drawing the same object(s)

@@ -398,21 +398,12 @@ namespace AnnoDesigner
         private Rect _selectionRect;
 
         /// <summary>
-        /// Backing field of the PlacedObjects property.
-        /// </summary>
-        private List<LayoutObject> _placedObjects;
-
-        /// <summary>
         /// List of all currently placed objects.
         /// </summary>
         public List<LayoutObject> PlacedObjects {
             get
             {
-                return _placedObjects;
-            }
-            set
-            {
-                _placedObjects = value;
+                return actionManager.placedObjects;
             }
         }
 
@@ -539,7 +530,8 @@ namespace AnnoDesigner
             Dictionary<string, IconImage> iconsToUse,
             ICoordinateHelper coordinateHelperToUse = null,
             IBrushCache brushCacheToUse = null,
-            IPenCache penCacheToUse = null)
+            IPenCache penCacheToUse = null,
+            List<LayoutObject> placedObjects = null)
         {
             InitializeComponent();
 
@@ -555,9 +547,15 @@ namespace AnnoDesigner
             // initialize
             CurrentMode = MouseMode.Standard;
 
-            PlacedObjects = new List<LayoutObject>();
+            if (placedObjects is null)
+            {
+                actionManager = new ActionManager();
+            }
+            else
+            {
+                actionManager = new ActionManager(placedObjects);
+            }
             SelectedObjects = new List<LayoutObject>();
-            actionManager = new ActionManager(ref _placedObjects);
 
             const int dpiFactor = 1;
             _linePen = _penCache.GetPen(Brushes.Black, dpiFactor * 1);
@@ -1878,7 +1876,7 @@ namespace AnnoDesigner
                         layoutObjects.Add(new LayoutObject(curObj, _coordinateHelper, _brushCache, _penCache));
                     }
 
-                    PlacedObjects = layoutObjects;
+                    actionManager = new ActionManager(layoutObjects);
                     LoadedFile = filename;
                     Normalize(1);
 

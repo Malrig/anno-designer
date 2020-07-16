@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using AnnoDesigner.Models;
 using NLog;
+using System;
 
 namespace AnnoDesigner.Actions
 {
@@ -18,12 +19,12 @@ namespace AnnoDesigner.Actions
         public NoOpAction() {}
 
 
-        public void PerformAction(List<LayoutObject> placedObjects)
+        public void PerformAction(Dictionary<Guid, LayoutObject> placedObjects)
         {
             logger.Debug("Performing no-op action.");
         }
 
-        public void UndoAction(List<LayoutObject> placedObjects)
+        public void UndoAction(Dictionary<Guid, LayoutObject> placedObjects)
         {
             logger.Debug("Undoing no-op action");
         }

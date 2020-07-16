@@ -18,7 +18,7 @@ namespace AnnoDesigner.Models
         event Action<string> OnStatusMessageChanged;
         event Action<LayoutObject> OnCurrentObjectChanged;
 
-        List<LayoutObject> PlacedObjects { get; set; }
+        List<LayoutObject> PlacedObjects { get; }
         List<LayoutObject> SelectedObjects { get; set; }
         List<LayoutObject> ClipboardObjects { get; }
         BuildingPresets BuildingPresets { get; }

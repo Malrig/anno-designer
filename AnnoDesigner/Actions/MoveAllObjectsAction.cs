@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using AnnoDesigner.Models;
 using NLog;
 using System.Windows;
+using System;
 
 namespace AnnoDesigner.Actions
 {
@@ -21,19 +22,19 @@ namespace AnnoDesigner.Actions
             _delta_y = delta_y; 
         }
 
-        public void PerformAction(List<LayoutObject> placedObjects)
+        public void PerformAction(Dictionary<Guid, LayoutObject> placedObjects)
         {
             logger.Debug("Perform move all action.");
-            foreach (var curLayoutObject in placedObjects)
+            foreach (LayoutObject curLayoutObject in placedObjects.Values)
             {
                 curLayoutObject.Position = new Point(curLayoutObject.Position.X + _delta_x, curLayoutObject.Position.Y + _delta_y);
             }
         }
 
-        public void UndoAction(List<LayoutObject> placedObjects)
+        public void UndoAction(Dictionary<Guid, LayoutObject> placedObjects)
         {
             logger.Debug("Undo move all action.");
-            foreach (var curLayoutObject in placedObjects)
+            foreach (LayoutObject curLayoutObject in placedObjects.Values)
             {
                 curLayoutObject.Position = new Point(curLayoutObject.Position.X - _delta_x, curLayoutObject.Position.Y - _delta_y);
             }
